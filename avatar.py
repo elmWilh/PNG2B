@@ -1,8 +1,4 @@
 ﻿#!/usr/bin/env python3
-# avatar.py
-# Запуск: python avatar.py [preset_name]
-# Загружает пресет из папки presets/ и запускает анимированного аватара.
-
 import os
 import sys
 import json
@@ -13,7 +9,6 @@ import traceback
 from app_meta import APP_WINDOW_TITLE
 from app_paths import LEGACY_PRESET_DIRS, PRESET_AVATAR_DIR, PRESET_CONFIG_NAME, PRESET_EMOTIONS_DIR, PRESET_RUNTIME_CONTROL_NAME
 
-# Импортируем pygame и numpy/pyaudio; оставляем понятные ошибки на случай отсутствия библиотек.
 try:
     import pygame as py
 except Exception as e:
@@ -31,9 +26,8 @@ except Exception as e:
 try:
     import pyaudio
 except Exception as e:
-    pyaudio = None  # Проверим позже и завершимся с понятным сообщением.
+    pyaudio = None
 
-# Для управления окном на Windows.
 IS_WINDOWS = sys.platform.startswith("win")
 if IS_WINDOWS:
     try:
@@ -43,7 +37,6 @@ if IS_WINDOWS:
         import win32gui
         import win32.lib.win32con as win32con
     except Exception:
-        # Если win32 недоступен, продолжаем без AlwaysOnTop/Layered-функций.
         win32api = win32gui = win32con = None
         ctypes = None
         wintypes = None
@@ -74,9 +67,6 @@ if IS_WINDOWS and ctypes:
         ]
 
 
-# -----------------------
-# Утилиты
-# -----------------------
 def show_console():
     """Показать консоль на Windows."""
     if IS_WINDOWS and ctypes:
@@ -106,9 +96,6 @@ def clamp(v, a, b):
     return max(a, min(b, v))
 
 
-# -----------------------
-# Avatar
-# -----------------------
 class Avatar:
     SUPPORTED_EXT = {".png", ".jpg", ".jpeg", ".bmp", ".gif"}
 
@@ -116,7 +103,6 @@ class Avatar:
         self.preset_name = preset_name
         self.presets_dirs = presets_dirs
 
-        # Ищем каталог пресета; сначала новая структура, затем legacy-папки.
         self.preset_path = None
         for d in self.presets_dirs:
             candidate = os.path.join(d, preset_name)
@@ -127,7 +113,6 @@ class Avatar:
         if not self.preset_path:
             raise FileNotFoundError(f"РќРµ РЅР°Р№РґРµРЅ РїСЂРµСЃРµС‚ '{preset_name}' РІ РїР°РїРєР°С… {presets_dirs}")
 
-        # Основные пути внутри пресета.
         self.config_path = os.path.join(self.preset_path, PRESET_CONFIG_NAME)
         self.sprites_path = os.path.join(self.preset_path, PRESET_AVATAR_DIR)
         self.emotions_path = os.path.join(self.preset_path, PRESET_EMOTIONS_DIR)
@@ -138,13 +123,8 @@ class Avatar:
         if not os.path.isdir(self.sprites_path):
             raise FileNotFoundError(f"РџР°РїРєР° {PRESET_AVATAR_DIR} РЅРµ РЅР°Р№РґРµРЅР° РІ {self.preset_path}")
 
-        # Загружаем конфиг; валидация и нормализация идут ниже.
         self.config = load_json_safe(self.config_path)
-
-        # Разбираем конфиг и заполняем недостающие значения.
         self._parse_config()
-
-        # Инициализируем Pygame display до загрузки изображений.
         py.init()
         self.hwnd = None
         self.window_pos = None
@@ -162,7 +142,6 @@ class Avatar:
             except Exception as e:
                 print("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёРєРѕРЅРєСѓ:", e)
 
-        # Создаём окно до загрузки спрайтов; это нужно для .convert_alpha().
         self.screen = py.display.set_mode(self.window_size, py.NOFRAME)
         py.display.set_caption(f"{APP_WINDOW_TITLE} - {self.preset_name}")
 
@@ -170,31 +149,20 @@ class Avatar:
 
         self._load_sprites()
 
-        # Инициализируем аудио и микрофон.
         self._init_audio()
-
-        # Подготавливаем служебное состояние для анимаций.
         self._init_state()
         self._init_runtime_state()
         self.avatar_surface = py.Surface(self.window_size, py.SRCALPHA)
-
-        # В режиме отладки оставляем консоль, иначе скрываем её.
         if not self.debug:
             hide_console()
         else:
             show_console()
 
-    # -----------------------
-    # Парсинг конфига и значения по умолчанию
-    # -----------------------
     def _parse_config(self):
         c = self.config
-
-        # Window
         win = c.get("Window", {})
         size = win.get("Size", [750])
         if not isinstance(size, (list, tuple)):
-            # Поддерживаем старый формат с одним числом.
             size = [size]
         if len(size) == 1:
             self.window_size = (max(1, int(size[0])), max(1, int(size[0])))
@@ -211,18 +179,15 @@ class Avatar:
             self.chromakey_color = (0, 255, 0)
         self.always_on_top = bool(win.get("AlwaysOnTop", False))
 
-        # Microphone
         mic = c.get("Microphone", {})
         self.max_v = float(mic.get("MaxVolume", 1600))
         self.background_noise = float(mic.get("BackgroundNoise", 50))
         device_idx = mic.get("DeviceIndex")
-        self.device_index = int(device_idx) if device_idx is not None else None  # None = устройство по умолчанию
+        self.device_index = int(device_idx) if device_idx is not None else None
 
-        # Blink
         blink = c.get("Blink", {})
         interval = blink.get("Interval", [4, 8])
         if isinstance(interval, str):
-            # Поддержка старого строкового формата "0.1,3".
             try:
                 a, b = [float(x.strip()) for x in interval.split(",")]
                 interval = [a, b]
@@ -237,7 +202,6 @@ class Avatar:
             durations = [float(x.strip()) for x in durations.split(",") if x.strip()]
         self.blink_durations = [float(x) for x in durations] if durations else [0.1]
 
-        # EmotionBlink
         emo = c.get("EmotionBlink", {})
         self.emo_enabled = bool(emo.get("Enabled", False))
         self.emo_threshold = float(emo.get("Threshold", 1500))
@@ -246,7 +210,6 @@ class Avatar:
             emo_durs = [float(x.strip()) for x in emo_durs.split(",") if x.strip()]
         self.emo_durations = [float(x) for x in emo_durs] if emo_durs else [0.1]
 
-        # Movement
         move = c.get("Movement", {})
         mode = str(move.get("Mode", "")).strip().capitalize()
         if mode not in {"Squash", "Bounce", "Static"}:
@@ -277,19 +240,16 @@ class Avatar:
         self.petpet_frame_count = max(1, int(petpet.get("FrameCount", 5)))
         self.petpet_event_duration = max(0.2, float(petpet.get("EventDuration", 2.0)))
 
-        # Mouth
         mouth = c.get("Mouth", {})
         self.mouth_frame_interval = float(mouth.get("FrameInterval", 0.05))
         self.mouth_close_delay_enabled = bool(mouth.get("UseCloseDelay", False))
         self.mouth_close_delay = float(mouth.get("CloseDelay", 0.35))
 
-        # Улучшения LipSync
         lip = c.get("LipSync", {})
-        self.lip_smoothing = float(lip.get("Smoothing", 0.7))          # 0.0-1.0: чем выше, тем плавнее реакция.
-        self.hyst_high = float(lip.get("HysteresisHigh", 120.0))      # Порог начала речи.
-        self.hyst_low = float(lip.get("HysteresisLow", 50.0))         # Порог удержания речи; должен быть ниже high.
+        self.lip_smoothing = float(lip.get("Smoothing", 0.7))
+        self.hyst_high = float(lip.get("HysteresisHigh", 120.0))
+        self.hyst_low = float(lip.get("HysteresisLow", 50.0))
 
-        # Debug
         self.debug = bool(c.get("DebugMode", False))
     def _configure_window(self):
         if not (IS_WINDOWS and win32gui and win32api and win32con):
@@ -520,9 +480,6 @@ class Avatar:
         self.petpet_event_started = now
         self.petpet_event_until = max(self.petpet_event_until, now + self.petpet_event_duration)
 
-    # -----------------------
-    # Загрузка спрайтов
-    # -----------------------
     def _transform_sprite(self, img):
         if img is None:
             return None
@@ -714,7 +671,6 @@ class Avatar:
             try:
                 img = py.image.load(path).convert_alpha()
             except Exception as e:
-                # Если convert_alpha() не сработал, пробуем без него.
                 try:
                     img = py.image.load(path)
                 except Exception as e2:
@@ -742,23 +698,18 @@ class Avatar:
                 elif name == "cm":
                     self.cm_frame = load_sprite(full)
             except Exception as e:
-                # Не падаем на первой ошибке загрузки конкретного файла.
                 print(f"РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ: РЅРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ {full}: {e}")
 
-        # Проверки и fallback-сценарии.
         if not self.mouth_frames:
             raise FileNotFoundError(f"Р’ {self.sprites_path} РЅРµ РЅР°Р№РґРµРЅС‹ РєР°РґСЂС‹ СЂС‚Р° (s_0, s_1, ...).")
 
-        # Если blink_frames нет, это не фатально: просто отключаем моргание.
         if not self.blink_frames:
             print("РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ: РєР°РґСЂС‹ РјРѕСЂРіР°РЅРёСЏ (b_*) РЅРµ РЅР°Р№РґРµРЅС‹ вЂ” РјРѕСЂРіР°РЅРёРµ РѕС‚РєР»СЋС‡РµРЅРѕ.")
 
-        # Если эмоциональная анимация включена, но eb_* нет, пробуем использовать b_*.
         if self.emo_enabled and not self.emo_frames:
             if self.blink_frames:
                 print("РРЅС„Рѕ: СЌРјРѕС†РёРѕРЅР°Р»СЊРЅС‹Рµ РєР°РґСЂС‹ eb_* РЅРµ РЅР°Р№РґРµРЅС‹ вЂ” РёСЃРїРѕР»СЊР·СѓРµРј b_* РґР»СЏ СЌРјРѕС†РёРё.")
                 self.emo_frames = list(self.blink_frames)
-                # Если durations отсутствуют, используем blink_durations.
                 if not self.emo_durations:
                     self.emo_durations = list(self.blink_durations)
             else:
@@ -768,9 +719,6 @@ class Avatar:
         self._fit_sprite_groups()
         self._load_petpet_sprite()
 
-    # -----------------------
-    # Аудио
-    # -----------------------
     def _init_audio(self):
         if pyaudio is None:
             raise RuntimeError("pyaudio РЅРµ СѓСЃС‚Р°РЅРѕРІР»РµРЅ. РЈСЃС‚Р°РЅРѕРІРё pyaudio РґР»СЏ СЂР°Р±РѕС‚С‹ СЃ РјРёРєСЂРѕС„РѕРЅРѕРј.")
@@ -780,7 +728,7 @@ class Avatar:
             kwargs = {
                 "format": pyaudio.paInt16,
                 "channels": 1,
-                "rate": 44100,  # Держим тот же rate, что и в менеджере, для одинакового уровня.
+                "rate": 44100,
                 "input": True,
                 "frames_per_buffer": 1024
             }
@@ -800,10 +748,6 @@ class Avatar:
             return float(rms)
         except Exception:
             return 0.0
-
-    # -----------------------
-    # Инициализация состояния
-    # -----------------------
 
     def _blit_centered_to(self, target_surface, img, x_offset=0, y_offset=0):
         """Рисует изображение по центру target_surface с указанным смещением."""
@@ -842,7 +786,6 @@ class Avatar:
     def _init_state(self):
         self.clock = py.time.Clock()
 
-        # Базовые состояния.
         self.last_blink_time = time.time()
         self.blink_active = False
         self.blink_start = 0
@@ -858,16 +801,12 @@ class Avatar:
         self.mouth_index = 0
         self.last_talk_time = time.time()
 
-        # Время старта для sway-анимации.
         self.t0 = time.time()
 
         self.smoothed_loudness = 0.0
         self.was_talking = False
-        self.last_raw_loudness = 0.0  # Нужно для вычисления delta_l в эмоциональной анимации.
+        self.last_raw_loudness = 0.0
         self.dynamic_squash_level = 0.0
-    # -----------------------
-    # Перемещение окна мышью
-    # -----------------------
 
     def move_window(self):
         if not IS_WINDOWS or win32api is None:
@@ -889,9 +828,6 @@ class Avatar:
         except Exception:
             pass
 
-    # -----------------------
-    # Основной цикл
-    # -----------------------
     def run(self):
         try:
             while True:
@@ -906,22 +842,18 @@ class Avatar:
                 now = time.time()
                 self._poll_runtime_control(now)
 
-                # === Расчёт громкости ===
                 raw_loudness = self._safe_read_mic() - self.background_noise
                 raw_loudness = max(0.0, raw_loudness)
 
-                # EMA-сглаживание общей громкости.
                 self.smoothed_loudness = (
                     self.smoothed_loudness * self.lip_smoothing +
                     raw_loudness * (1.0 - self.lip_smoothing)
                 )
                 loudness = clamp(self.smoothed_loudness, 0.0, self.max_v)
 
-                # Delta считаем по raw, чтобы лучше ловить резкие всплески.
                 delta_l = raw_loudness - self.last_raw_loudness
                 self.last_raw_loudness = raw_loudness
 
-                # Гистерезис для определения факта речи.
                 if loudness > self.hyst_high:
                     talking = True
                 elif loudness > self.hyst_low:
@@ -933,7 +865,6 @@ class Avatar:
                 if talking:
                     self.last_talk_time = now
 
-                # === Эмоция ===
                 if self.emo_enabled and delta_l > self.emo_threshold and not self.emo_active:
                     self.emo_active = True
                     self.emo_start = now
@@ -945,7 +876,6 @@ class Avatar:
                     if now - self.emo_start > total:
                         self.emo_active = False
 
-                # === Моргание ===
                 if not self.emo_active and not self.blink_active and (now - self.last_blink_time) > random.uniform(*self.blink_interval):
                     if self.blink_frames:
                         self.blink_active = True
@@ -967,7 +897,6 @@ class Avatar:
                                 self.blink_frame_idx = i
                                 break
 
-                # === Рот ===
                 if (now - self.last_mouth_frame_time) >= self.mouth_frame_interval:
                     idx = int((loudness / max(1.0, self.max_v)) * (len(self.mouth_frames) - 1))
                     self.mouth_index = clamp(idx, 0, len(self.mouth_frames) - 1)
@@ -980,7 +909,6 @@ class Avatar:
                     target_squash * 0.2
                 )
 
-                # === Движение (sway + jump) ===
                 elapsed_total = now - self.t0
                 movement_enabled = self.movement_mode != "Static"
                 y_sway = self.sway_v[0] * math.sin(elapsed_total * self.sway_v[1] * 2 * math.pi) if movement_enabled and self.sway_v[1] != 0 else 0
@@ -989,16 +917,13 @@ class Avatar:
                 y_offset = int(y_sway - y_jump)
                 x_offset = int(x_sway)
 
-                # === Отрисовка ===
                 if not self.use_alpha_window:
                     self.screen.fill(self.chromakey_color if self.use_chromakey else (0, 0, 0))
-                self.avatar_surface.fill((0, 0, 0, 0))  # Прозрачная поверхность для сборки аватара.
+                self.avatar_surface.fill((0, 0, 0, 0))
 
-                # --- Базовый слой ---
                 base_img = self.mouth_frames[0]
                 self._blit_centered_to(self.avatar_surface, base_img, x_offset, -y_offset)
 
-                # --- Рот ---
                 if talking:
                     self._blit_centered_to(self.avatar_surface, self.mouth_frames[self.mouth_index], x_offset, -y_offset)
                 else:
@@ -1007,7 +932,6 @@ class Avatar:
                     elif self.cm_frame:
                         self._blit_centered_to(self.avatar_surface, self.cm_frame, x_offset, -y_offset)
 
-                # --- Глаза ---
                 if self.emo_active and self.emo_frames:
                     elapsed_e = now - self.emo_start
                     acc = 0.0
@@ -1023,11 +947,9 @@ class Avatar:
                     idx = clamp(self.blink_frame_idx, 0, len(self.blink_frames) - 1)
                     self._blit_centered_to(self.avatar_surface, self.blink_frames[idx], x_offset, -y_offset)
 
-                # --- dynamic squash ---
                 final_avatar = self.apply_dynamic_squash(self.avatar_surface.copy(), self.dynamic_squash_level)
                 final_avatar = self._apply_petpet_overlay(final_avatar, now)
 
-                # --- Вывод на экран ---
                 if self.use_alpha_window:
                     self._push_alpha_frame(final_avatar)
                 else:
@@ -1035,7 +957,6 @@ class Avatar:
                     py.display.update()
                 self.clock.tick(60)
 
-                # --- Отладочный вывод ---
                 if self.debug:
                     print(f"raw={raw_loudness:5.0f} smooth={loudness:5.0f} d={delta_l:5.0f} "
                         f"mouth={self.mouth_index} talk={talking} emo={self.emo_active} "
@@ -1049,9 +970,6 @@ class Avatar:
             traceback.print_exc()
             self.exit()
 
-    # -----------------------
-    # Вспомогательные методы
-    # -----------------------
     def _blit_centered(self, img, x_offset=0, y_offset=0):
         """
         Рисует изображение по центру окна со смещением x_offset/y_offset.
@@ -1064,9 +982,6 @@ class Avatar:
         cy = (self.window_size[1] - h) // 2 + y_offset
         self.screen.blit(img, (cx, cy))
 
-    # -----------------------
-    # Завершение работы
-    # -----------------------
     def exit(self):
         try:
             if hasattr(self, "stream") and self.stream:
@@ -1100,15 +1015,11 @@ class Avatar:
                 py.quit()
             except Exception:
                 pass
-            # В debug-режиме консоль оставляем открытой, иначе стараемся скрыть.
             if not self.debug:
                 hide_console()
             sys.exit(0)
 
 
-# -----------------------
-# Точка входа
-# -----------------------
 def main():
     if len(sys.argv) < 2:
         show_console()

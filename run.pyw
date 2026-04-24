@@ -5,47 +5,44 @@ import sys
 
 from app_meta import APP_NAME, APP_VERSION
 
-# Список обязательных библиотек
 REQUIRED_LIBS = [
     "pygame",
     "numpy",
     "pyaudio",
-    "pywin32",  # обязательно для Windows
+    "pywin32",
 ]
 
 
 def install_package(package):
-    print(f"Устанавливаем {package}...")
+    print(f"Installing {package}...")
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", package])
     except subprocess.CalledProcessError:
-        print(f"Не удалось установить {package}. Установите вручную.")
+        print(f"Failed to install {package}. Please install it manually.")
         sys.exit(1)
 
 
 def check_and_install():
-    print(f"Запуск {APP_NAME} v{APP_VERSION}")
+    print(f"Starting {APP_NAME} v{APP_VERSION}")
     for lib in REQUIRED_LIBS:
-        print(f"Проверка библиотеки: {lib}...")
+        print(f"Checking library: {lib}...")
         try:
-            # Для pywin32 проверяем импорт win32api/win32gui.
             if lib == "pywin32":
                 import win32api
                 import win32gui
             else:
                 importlib.import_module(lib)
         except ImportError:
-            print(f"Библиотека {lib} не найдена. Устанавливаем...")
+            print(f"Library {lib} was not found. Installing...")
             install_package(lib)
 
 
 if __name__ == "__main__":
     check_and_install()
 
-    # Запуск main.pyw
     main_path = os.path.join(os.path.dirname(__file__), "main.pyw")
     if not os.path.exists(main_path):
-        print("main.pyw не найден!")
+        print("main.pyw was not found.")
         sys.exit(1)
 
     python_executable = sys.executable
